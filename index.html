@@ -1,1 +1,202 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BEXCO 마봇(Mabot) 실시간 QR 대기줄</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", sans-serif; }
+    body { margin: 0; background: #f3f4f6; color: #111827; }
+    .topbar { display: flex; justify-content: space-between; align-items: center; padding: 12px 18px; background: #111827; color: #fff; flex-wrap: wrap; gap: 8px; }
+    .topbar button { border: none; border-radius: 8px; padding: 8px 14px; font-weight: 700; cursor: pointer; }
+    .mode-btn { background: #374151; color: #fff; }
+    .mode-btn.active { background: #2563eb; }
+    .container { max-width: 960px; margin: 20px auto; padding: 0 16px; }
+    .grid { display: grid; grid-template-columns: 320px 1fr; gap: 16px; }
+    @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+    .card { background: #fff; border-radius: 16px; padding: 20px; box-shadow: 0 4px 16px rgba(0,0,0,0.06); }
+    .qr-box { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; }
+    .big-num { font-size: 48px; font-weight: 900; color: #2563eb; margin: 8px 0; }
+    .btn-primary { width: 100%; padding: 14px; font-size: 17px; font-weight: 800; border: none; border-radius: 12px; background: #2563eb; color: #fff; cursor: pointer; }
+    .btn-call { width: 100%; padding: 16px; font-size: 19px; font-weight: 900; border: none; border-radius: 12px; background: #16a34a; color: #fff; cursor: pointer; }
+    .btn-reset { padding: 10px 14px; font-size: 13px; font-weight: 700; border: 1px solid #d1d5db; border-radius: 10px; background: #fff; color: #374151; cursor: pointer; }
+    .queue-list { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+    .ticket { padding: 8px 14px; border-radius: 999px; background: #e5e7eb; font-weight: 700; font-size: 14px; }
+    .ticket.calling { background: #facc15; color: #111827; border: 2px solid #ca8a04; }
+    .alert-overlay { display: none; position: fixed; inset: 0; z-index: 9999; align-items: center; justify-content: center; flex-direction: column; text-align: center; padding: 24px; color: #111827; animation: flashBg 0.6s infinite alternate; }
+    .alert-overlay.show { display: flex; }
+    @keyframes flashBg { 0% { background: #fde047; } 100% { background: #4ade80; } }
+    .alert-overlay h1 { font-size: 36px; margin: 0 0 12px; }
+    .alert-overlay p { font-size: 20px; margin: 0 0 24px; font-weight: 700; }
+    .btn-confirm { padding: 16px 32px; font-size: 20px; font-weight: 900; border: none; border-radius: 14px; background: #111827; color: #fff; cursor: pointer; }
+    .status-badge { font-size: 12px; padding: 4px 10px; border-radius: 999px; background: #065f46; color: #d1fae5; }
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div><strong>마봇 부스 실시간 대기줄</strong> <span id="dbStatus" class="status-badge">Firebase 연결 중...</span></div>
+    <div>
+      <button id="btnAdminMode" class="mode-btn" onclick="switchMode('admin')">운영자 태블릿</button>
+      <button id="btnGuestMode" class="mode-btn" onclick="switchMode('guest')">관람객 대기표</button>
+    </div>
+  </div>
+  <div id="adminView" class="container" style="display:none;">
+    <div class="grid">
+      <div class="card qr-box">
+        <h3 style="margin:0;">대기 등록 QR코드</h3>
+        <div id="qrcode"></div>
+        <small id="guestUrlText" style="word-break:break-all; color:#4b5563;"></small>
+      </div>
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h3 style="margin:0;">현재 호출 번호</h3>
+          <button class="btn-reset" onclick="resetQueue()">대기열 초기화</button>
+        </div>
+        <div id="adminCallingNum" class="big-num">-</div>
+        <p style="margin:0 0 14px; color:#4b5563;">발급 완료: <strong id="adminLastIssued">0</strong>번 · 현재 대기 중: <strong id="adminWaitingCount">0</strong>팀</p>
+        <button class="btn-call" onclick="callNextTeam()">다음 대기 팀 호출!</button>
+        <h4 style="margin:20px 0 6px;">대기 중인 팀 목록</h4>
+        <div id="adminQueueList" class="queue-list"></div>
+      </div>
+    </div>
+  </div>
+  <div id="guestView" class="container" style="display:none;">
+    <div class="card" style="text-align:center; max-width:460px; margin:20px auto;">
+      <h2 style="margin-top:0;">마봇 체험 대기표</h2>
+      <p style="color:#4b5563;">먼저 알림을 켜고 대기번호를 받아 주세요.</p>
+      <button id="btnGetTicket" class="btn-primary" onclick="takeTicket()">알림 켜기 및 대기번호 받기</button>
+      <div id="myTicketBox" style="display:none; margin-top:20px;">
+        <div style="color:#6b7280; font-size:14px;">내 대기번호</div>
+        <div id="myTicketNum" class="big-num">-</div>
+        <p id="aheadText" style="font-size:18px; font-weight:800; color:#1d4ed8;">-</p>
+        <p style="font-size:13px; color:#6b7280;">현재 호출 번호: <strong id="guestCallingNum">-</strong><br />차례가 되면 화면이 깜빡이며 알림이 울립니다. 창을 닫지 마세요!</p>
+      </div>
+    </div>
+  </div>
+  <div id="alertOverlay" class="alert-overlay">
+    <h1>지금 마봇 부스로 오세요!</h1>
+    <p id="alertTicketDesc">대기번호가 호출되었습니다.</p>
+    <button class="btn-confirm" onclick="dismissAlert()">확인했어요</button>
+  </div>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+  <script>
+    firebase.initializeApp({
+      apiKey: "AIzaSyAoQzHoC8cGpQfRhG_dXnQCYsAfURiv6E8",
+      authDomain: "mabot-tello-connection-s-8ec99.firebaseapp.com",
+      databaseURL: "https://mabot-tello-connection-s-8ec99-default-rtdb.firebaseio.com",
+      projectId: "mabot-tello-connection-s-8ec99",
+      storageBucket: "mabot-tello-connection-s-8ec99.firebasestorage.app",
+      messagingSenderId: "636749570378",
+      appId: "1:636749570378:web:a9b28dc60b58746cf5e1b3",
+      measurementId: "G-PPMESFDFWC"
+    });
+    const db = firebase.database();
+    const queueRef = db.ref("mabotQueue");
+    const params = new URLSearchParams(window.location.search);
+    let currentMode = params.get("mode") === "guest" ? "guest" : "admin";
+    let myNumber = Number(localStorage.getItem("mabot_my_number") || "0");
+    let latestState = { lastIssued: 0, currentCalling: 0, tickets: {} };
+    let soundTimer = null, audioCtx = null, dismissedForCall = 0;
 
+    function formatCode(n) { return n > 0 ? "A-" + String(n).padStart(2, "0") : "-"; }
+    function playBeep() {
+      try {
+        if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        const osc = audioCtx.createOscillator(), gain = audioCtx.createGain();
+        osc.type = "sine"; osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+        gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+        osc.connect(gain); gain.connect(audioCtx.destination);
+        osc.start(); osc.stop(audioCtx.currentTime + 0.25);
+      } catch (e) {}
+    }
+    function triggerCallAlert(num) {
+      if (dismissedForCall === num) return;
+      document.getElementById("alertTicketDesc").textContent = formatCode(num) + " 차례입니다! 부스로 이동해 주세요.";
+      document.getElementById("alertOverlay").classList.add("show");
+      if (navigator.vibrate) navigator.vibrate([400, 200, 400, 200, 400]);
+      playBeep(); clearInterval(soundTimer);
+      soundTimer = setInterval(function () { playBeep(); if (navigator.vibrate) navigator.vibrate([300, 200, 300]); }, 1500);
+    }
+    function dismissAlert() {
+      dismissedForCall = latestState.currentCalling;
+      clearInterval(soundTimer);
+      document.getElementById("alertOverlay").classList.remove("show");
+    }
+    function switchMode(mode) {
+      currentMode = mode;
+      document.getElementById("adminView").style.display = mode === "admin" ? "block" : "none";
+      document.getElementById("guestView").style.display = mode === "guest" ? "block" : "none";
+      document.getElementById("btnAdminMode").classList.toggle("active", mode === "admin");
+      document.getElementById("btnGuestMode").classList.toggle("active", mode === "guest");
+      if (mode === "admin") renderQR();
+      renderUI();
+    }
+    function renderQR() {
+      const baseUrl = window.location.origin + window.location.pathname + "?mode=guest";
+      document.getElementById("guestUrlText").textContent = baseUrl;
+      const qrContainer = document.getElementById("qrcode");
+      qrContainer.innerHTML = "";
+      new QRCode(qrContainer, { text: baseUrl, width: 180, height: 180 });
+    }
+    function takeTicket() {
+      playBeep();
+      if (navigator.vibrate) navigator.vibrate(150);
+      if (myNumber > 0 && latestState.tickets && latestState.tickets[myNumber]) { renderUI(); return; }
+      db.ref("mabotQueue/lastIssued").transaction(function (c) { return (c || 0) + 1; }, function (err, committed, snap) {
+        if (committed) {
+          myNumber = snap.val();
+          localStorage.setItem("mabot_my_number", String(myNumber));
+          db.ref("mabotQueue/tickets/" + myNumber).set({ number: myNumber, status: "waiting" });
+          renderUI();
+        }
+      });
+    }
+    function callNextTeam() {
+      const maxNum = latestState.lastIssued || 0;
+      const nextNum = (latestState.currentCalling || 0) + 1;
+      if (nextNum > maxNum) { alert("더 이상 호출할 대기 팀이 없습니다."); return; }
+      db.ref("mabotQueue/currentCalling").set(nextNum);
+      db.ref("mabotQueue/tickets/" + nextNum + "/status").set("called");
+    }
+    function resetQueue() {
+      if (!confirm("대기번호와 대기열을 처음부터 초기화할까요?")) return;
+      queueRef.set({ lastIssued: 0, currentCalling: 0, tickets: {} });
+      localStorage.removeItem("mabot_my_number");
+      myNumber = 0; dismissedForCall = 0; dismissAlert();
+    }
+    function renderUI() {
+      const state = latestState || { lastIssued: 0, currentCalling: 0, tickets: {} };
+      const calling = state.currentCalling || 0, lastIssued = state.lastIssued || 0, ticketsObj = state.tickets || {};
+      document.getElementById("adminCallingNum").textContent = formatCode(calling);
+      document.getElementById("adminLastIssued").textContent = lastIssued;
+      const waitingNums = Object.keys(ticketsObj).map(Number).filter(function (n) { return n > calling; }).sort(function (a, b) { return a - b; });
+      document.getElementById("adminWaitingCount").textContent = waitingNums.length;
+      const listEl = document.getElementById("adminQueueList");
+      listEl.innerHTML = waitingNums.length === 0 ? '<span style="color:#6b7280;">대기 중인 팀이 없습니다.</span>' : "";
+      waitingNums.forEach(function (n, idx) {
+        const span = document.createElement("span");
+        span.className = "ticket" + (idx === 0 ? " calling" : "");
+        span.textContent = formatCode(n) + (idx === 0 ? " (다음)" : "");
+        listEl.appendChild(span);
+      });
+      document.getElementById("guestCallingNum").textContent = formatCode(calling);
+      if (myNumber > 0) {
+        document.getElementById("myTicketBox").style.display = "block";
+        document.getElementById("myTicketNum").textContent = formatCode(myNumber);
+        const ahead = Math.max(0, myNumber - calling - 1);
+        if (calling === myNumber) { document.getElementById("aheadText").textContent = "지금 내 차례입니다!"; triggerCallAlert(myNumber); }
+        else if (calling > myNumber) { document.getElementById("aheadText").textContent = "이미 호출이 지나간 번호입니다."; }
+        else { document.getElementById("aheadText").textContent = ahead === 0 ? "바로 다음 내 차례입니다!" : "내 앞에 " + ahead + "팀 대기 중"; }
+      } else { document.getElementById("myTicketBox").style.display = "none"; }
+    }
+    queueRef.on("value", function (snap) {
+      document.getElementById("dbStatus").textContent = "Firebase 실시간 연결됨";
+      latestState = snap.val() || { lastIssued: 0, currentCalling: 0, tickets: {} };
+      renderUI();
+    }, function () { document.getElementById("dbStatus").textContent = "DB 연결 오류 (규칙 확인 필요)"; });
+    switchMode(currentMode);
+  </script>
+</body>
+</html>
