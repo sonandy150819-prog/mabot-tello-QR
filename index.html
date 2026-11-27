@@ -3,37 +3,41 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>BEXCO 마봇·텔로 실시간 QR 대기줄</title>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <title>BEXCO 마봇·텔로 대기줄</title>
   <style>
-    * { box-sizing: border-box; font-family: -apple-system, BlinkMacSystemFont, "Malgun Gothic", sans-serif; }
-    body { margin: 0; background: #f3f4f6; color: #111827; }
-    .topbar { display: flex; justify-content: space-between; align-items: center; padding: 12px 18px; background: #111827; color: #fff; flex-wrap: wrap; gap: 8px; }
-    .topbar button { border: none; border-radius: 8px; padding: 8px 14px; font-weight: 700; cursor: pointer; }
-    .mode-btn { background: #374151; color: #fff; }
-    .mode-btn.active { background: #2563eb; }
-    .lock-btn { background: #991b1b; color: #fff; }
-    .container { max-width: 1020px; margin: 20px auto; padding: 0 16px; }
-    .grid { display: grid; grid-template-columns: 320px 1fr; gap: 16px; }
-    @media (max-width: 780px) { .grid { grid-template-columns: 1fr; } }
-    .card { background: #fff; border-radius: 16px; padding: 20px; box-shadow: 0 4px 16px rgba(0,0,0,0.06); }
-    .qr-box { display: flex; flex-direction: column; align-items: center; text-align: center; gap: 10px; }
-    .big-num { font-size: 42px; font-weight: 900; color: #2563eb; margin: 8px 0; }
-    .btn-primary { width: 100%; padding: 14px; font-size: 17px; font-weight: 800; border: none; border-radius: 12px; background: #2563eb; color: #fff; cursor: pointer; }
-    .call-btns { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-    @media (max-width: 520px) { .call-btns { grid-template-columns: 1fr; } }
-    .btn-call-1 { width: 100%; padding: 15px; font-size: 18px; font-weight: 900; border: none; border-radius: 12px; background: #16a34a; color: #fff; cursor: pointer; }
-    .btn-call-2 { width: 100%; padding: 15px; font-size: 18px; font-weight: 900; border: none; border-radius: 12px; background: #0d9488; color: #fff; cursor: pointer; }
-    .btn-reset { padding: 10px 14px; font-size: 13px; font-weight: 700; border: 1px solid #d1d5db; border-radius: 10px; background: #fff; color: #374151; cursor: pointer; }
-    .queue-list { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
-    .ticket-row { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 14px; border-radius: 12px; background: #f3f4f6; font-size: 14px; flex-wrap: wrap; }
-    .ticket-row.calling { background: #fef08a; border: 2px solid #ca8a04; font-weight: 700; }
-    .field-group { text-align: left; margin-bottom: 14px; }
-    .field-group label { display: block; font-size: 13px; font-weight: 700; margin-bottom: 6px; color: #374151; }
-    .field-group input, .field-group select { width: 100%; padding: 11px 12px; border: 1px solid #d1d5db; border-radius: 10px; font-size: 15px; }
-    .choice-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-    .choice-btn { padding: 12px 10px; border-radius: 10px; border: 2px solid #d1d5db; background: #fff; color: #111827; font-size: 14px; font-weight: 800; cursor: pointer; }
-    .choice-btn.selected { border-color: #2563eb; background: #eff6ff; color: #1d4ed8; }
-    .chat-box { margin-top: 14px; padding: 12px; border-radius: 12px; background: #eff6ff; border: 1px solid #bfdbfe; font-size: 13px; color: #1e3a8a; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; }
-    .chat-box a { color: #1d4ed8; font-weight: 800; word-break: break-all; }
-    .alert-overlay { display: none; position: fixed;
+    body { font-family: sans-serif; margin: 0; background: #f3f4f6; padding: 20px; }
+    .box { max-width: 480px; margin: 0 auto; background: #fff; padding: 20px; border-radius: 14px; }
+    button { padding: 12px 16px; font-size: 15px; font-weight: bold; margin: 4px; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h2>마봇·텔로 체험 대기표</h2>
+    <p>1. 체험 선택</p>
+    <button onclick="pick('마봇')">마봇</button>
+    <button onclick="pick('텔로')">텔로</button>
+    <div id="sub"></div>
+    <p><input id="nameInput" placeholder="성함 (필수)" style="padding:10px; width:100%; box-sizing:border-box;" /></p>
+    <button onclick="submitForm()" style="width:100%; background:#2563eb; color:#fff; border:none; border-radius:10px;">대기번호 받기</button>
+    <p id="result" style="font-weight:bold; color:#1d4ed8;"></p>
+    <p>오픈채팅: <a href="https://open.kakao.com/o/gZ0NITYi" target="_blank">https://open.kakao.com/o/gZ0NITYi</a></p>
+  </div>
+  <script>
+    let mainPick = "";
+    let subPick = "";
+    function pick(item) {
+      mainPick = item;
+      subPick = "";
+      const list = item === "마봇" ? ["직접 만들기", "완성품 체험하기"] : ["코딩", "조종"];
+      document.getElementById("sub").innerHTML = "<p>2. " + item + " 세부 선택</p>" +
+        list.map(x => `<button onclick="subPick='${x}'; document.getElementById('result').innerText='선택: ${item} - ${x}'">${x}</button>`).join("");
+    }
+    function submitForm() {
+      const name = document.getElementById("nameInput").value.trim();
+      if (!mainPick || !subPick) return alert("마봇/텔로와 세부 항목을 선택해 주세요.");
+      if (!name) return alert("성함은 필수입니다.");
+      document.getElementById("result").innerText = name + "님 완료 (" + mainPick + " / " + subPick + ")";
+    }
+  </script>
+</body>
+</html>
